@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 debian:bookworm-slim
+FROM debian:bookworm-slim
 
 LABEL author="Nanashi"
 LABEL org.opencontainers.image.licenses="MIT"
