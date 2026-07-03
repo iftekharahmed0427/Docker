@@ -22,7 +22,7 @@
     },
     "scripts": {
         "installation": {
-            "script": "#!/bin/bash\n# GravelHost Schedule I - delegate to the versioned installer baked into the image.\nexec bash /install.sh\n",
+            "script": "#!/bin/bash\n# GravelHost Schedule I - fetch and run the versioned installer from the repo.\nset -e\ncurl -fsSL \"https://raw.githubusercontent.com/iftekharahmed0427/Docker/main/games/schedule1/install.sh\" -o /tmp/s1-install.sh\nexec bash /tmp/s1-install.sh\n",
             "container": "ghcr.io/iftekharahmed0427/games:schedule1",
             "entrypoint": "bash"
         }
