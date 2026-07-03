@@ -1,0 +1,3 @@
+# Keep Linux build inputs as LF regardless of the OS they are edited on.
+*.sh        text eol=lf
+Dockerfile  text eol=lf
