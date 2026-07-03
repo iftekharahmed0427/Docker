@@ -10,6 +10,12 @@
 
 cd /home/container || exit 1
 
+# Wings runs us as an arbitrary uid with no home; point HOME/cache at the
+# writable volume so Wine and fontconfig have somewhere to write.
+export HOME=/home/container
+export XDG_CACHE_HOME=/home/container/.cache
+mkdir -p "${XDG_CACHE_HOME}"
+
 WINE_TEMPLATE="/opt/wineprefix"
 export WINEPREFIX="/home/container/.wine"
 CONFIG="/home/container/UserData/server_config.toml"

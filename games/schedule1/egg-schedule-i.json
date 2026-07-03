@@ -1,5 +1,5 @@
 {
-    "_comment": "GravelHost - Schedule I (Schedule 1) dedicated server. Runs the paid game + MelonLoader + DedicatedServerMod (ifBars, GPL-3.0) headless under Wine. A Steam account that OWNS Schedule I is required for the one-time install only; the running server authenticates anonymously.",
+    "_comment": "GravelHost - Schedule I (Schedule 1) dedicated server. Paid game + MelonLoader + DedicatedServerMod (ifBars, GPL-3.0) headless under Wine. Downloads via a shared Steam content account at install; the running server authenticates anonymously. Players connect by direct IP:port with the matching client mod.",
     "meta": {
         "version": "PTDL_v2",
         "update_url": null
@@ -7,8 +7,10 @@
     "exported_at": "2026-07-03T00:00:00+00:00",
     "name": "Schedule I",
     "author": "santonu974@gmail.com",
-    "description": "Schedule I dedicated server via DedicatedServerMod under Wine. Players connect by direct IP:port using the matching client mod. Set S1DS_RUNTIME (mono default, or il2cpp) to match the client build your players use.",
-    "features": null,
+    "description": "Schedule I dedicated server via DedicatedServerMod under Wine. Set S1DS_RUNTIME (mono default, or il2cpp) to match the client build your players use.",
+    "features": [
+        "steam_disk_space"
+    ],
     "docker_images": {
         "GravelHost Wine 11 (Schedule I)": "ghcr.io/iftekharahmed0427/games:schedule1"
     },
@@ -23,59 +25,64 @@
     "scripts": {
         "installation": {
             "script": "#!/bin/bash\n# GravelHost Schedule I - fetch and run the versioned installer from the repo.\nset -e\ncurl -fsSL \"https://raw.githubusercontent.com/iftekharahmed0427/Docker/main/games/schedule1/install.sh\" -o /tmp/s1-install.sh\nexec bash /tmp/s1-install.sh\n",
-            "container": "ghcr.io/iftekharahmed0427/games:schedule1",
+            "container": "ghcr.io/parkervcp/installers:debian",
             "entrypoint": "bash"
         }
     },
     "variables": [
         {
-            "name": "Steam Username",
-            "description": "Steam login of an account that OWNS Schedule I (the shared content account). Used only during install to download the game.",
+            "name": "Steam User",
+            "description": "Shared content account that owns Schedule I. Used only during install. Locked; managed by GravelHost.",
             "env_variable": "STEAM_USER",
-            "default_value": "",
-            "user_viewable": true,
-            "user_editable": true,
+            "default_value": "gravelhost",
+            "user_viewable": false,
+            "user_editable": false,
             "rules": "required|string",
+            "sort": 1,
             "field_type": "text"
         },
         {
             "name": "Steam Password",
-            "description": "Password for the content account. Used only during install. For production, set this on the egg and lock user_editable to false.",
+            "description": "Password for the shared content account. Used only during install. Locked.",
             "env_variable": "STEAM_PASS",
-            "default_value": "",
-            "user_viewable": true,
-            "user_editable": true,
+            "default_value": "Gravelhost3123!",
+            "user_viewable": false,
+            "user_editable": false,
             "rules": "required|string",
+            "sort": 2,
             "field_type": "text"
         },
         {
-            "name": "Steam Guard Code",
-            "description": "Optional. A current Steam Guard code if the account is challenged at install time. Leave blank if the account/host is already trusted.",
-            "env_variable": "STEAM_GUARD",
+            "name": "Steam Auth",
+            "description": "Steam Guard code, only needed if the content account is challenged at install time. Usually left blank.",
+            "env_variable": "STEAM_AUTH",
             "default_value": "",
             "user_viewable": true,
             "user_editable": true,
-            "rules": "nullable|string",
+            "rules": "nullable|string|max:8",
+            "sort": 3,
             "field_type": "text"
         },
         {
             "name": "Runtime",
-            "description": "Game runtime / branch. 'mono' (default, most robust) uses the alternate branch; 'il2cpp' uses the default branch players run and has a slow first boot (one-time Cpp2IL generation). Changing this requires a reinstall.",
+            "description": "mono (default, alternate branch) or il2cpp (default branch that players run; slow first boot). Changing this requires a reinstall.",
             "env_variable": "S1DS_RUNTIME",
             "default_value": "mono",
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|string|in:mono,il2cpp",
+            "sort": 4,
             "field_type": "text"
         },
         {
             "name": "Steam Branch Override",
-            "description": "Advanced. Force a specific Steam branch. Leave blank to use the correct branch for the selected runtime automatically.",
+            "description": "Advanced. Force a specific Steam branch. Blank uses the correct branch for the runtime automatically.",
             "env_variable": "STEAM_BRANCH",
             "default_value": "",
             "user_viewable": true,
             "user_editable": true,
             "rules": "nullable|string",
+            "sort": 5,
             "field_type": "text"
         },
         {
@@ -86,6 +93,7 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|string|max:64",
+            "sort": 6,
             "field_type": "text"
         },
         {
@@ -96,6 +104,29 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|integer|between:1,64",
+            "sort": 7,
+            "field_type": "text"
+        },
+        {
+            "name": "MelonLoader Version",
+            "description": "Advanced. Pinned MelonLoader release tag. Do not use v0.7.1.",
+            "env_variable": "MELONLOADER_VERSION",
+            "default_value": "v0.7.2",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|string",
+            "sort": 8,
+            "field_type": "text"
+        },
+        {
+            "name": "Mod Version",
+            "description": "Advanced. Pinned DedicatedServerMod release tag.",
+            "env_variable": "MOD_VERSION",
+            "default_value": "v1.0.0",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|string",
+            "sort": 9,
             "field_type": "text"
         }
     ]

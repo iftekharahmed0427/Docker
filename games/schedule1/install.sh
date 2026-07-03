@@ -1,89 +1,81 @@
 #!/bin/bash
-# GravelHost - Schedule I / Pterodactyl installer (egg-driven).
-# Fetched and run by the egg's install step. Downloads everything into
-# /mnt/server: the game (SteamCMD), Steamworks redist, MelonLoader, and the
-# runtime-matching server mod DLL, then seeds server_config.toml. The Wine
-# prefix is NOT handled here; the runtime entrypoint provisions it into the
-# volume on first boot.
-set -euo pipefail
+# GravelHost - Schedule I / Pterodactyl installer.
+# Modeled on the standard parkervcp SteamCMD egg, adapted for the Windows game
+# under Wine plus MelonLoader and the DedicatedServerMod. Runs as root in the
+# installer container (ghcr.io/parkervcp/installers:debian); writes the finished
+# server into /mnt/server. Pterodactyl re-chowns /mnt/server to the container
+# user after install.
+set -e
+
+# installers:debian is minimal; make sure unzip is present for the mod zips.
+apt-get update -qq >/dev/null 2>&1 || true
+apt-get install -y --no-install-recommends unzip >/dev/null 2>&1 || true
 
 STEAMAPPID=3164500
-INSTALL_DIR=/mnt/server
 MELONLOADER_VERSION="${MELONLOADER_VERSION:-v0.7.2}"
 MOD_VERSION="${MOD_VERSION:-v1.0.0}"
 
 RUNTIME=$(printf '%s' "${S1DS_RUNTIME:-mono}" | tr '[:upper:]' '[:lower:]')
 case "${RUNTIME}" in
-    mono)   DEFAULT_BRANCH="alternate"; MOD_DLL="DedicatedServerMod_Mono_Server.dll" ;;
-    il2cpp) DEFAULT_BRANCH="";           MOD_DLL="DedicatedServerMod_Il2cpp_Server.dll" ;;
+    mono)   BRANCH="${STEAM_BRANCH:-alternate}"; MOD_DLL="DedicatedServerMod_Mono_Server.dll" ;;
+    il2cpp) BRANCH="${STEAM_BRANCH:-}";           MOD_DLL="DedicatedServerMod_Il2cpp_Server.dll" ;;
     *) echo "ERROR: S1DS_RUNTIME must be 'mono' or 'il2cpp' (got '${RUNTIME}')."; exit 1 ;;
 esac
-BRANCH="${STEAM_BRANCH:-$DEFAULT_BRANCH}"
 
-echo "=== Schedule I install : runtime=${RUNTIME} branch=${BRANCH:-default} ML=${MELONLOADER_VERSION} mod=${MOD_VERSION} ==="
-mkdir -p "${INSTALL_DIR}"; cd "${INSTALL_DIR}"
+echo "=== Schedule I install: runtime=${RUNTIME} branch=${BRANCH:-default} ML=${MELONLOADER_VERSION} mod=${MOD_VERSION} ==="
 
-if [ -z "${STEAM_USER:-}" ] || [ -z "${STEAM_PASS:-}" ]; then
-    echo "ERROR: STEAM_USER and STEAM_PASS are required to download the paid game."; exit 1
-fi
+# --- SteamCMD (parkervcp pattern) --------------------------------------------
+cd /tmp
+mkdir -p /mnt/server/steamcmd
+curl -sSL -o steamcmd.tar.gz https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz
+tar -xzf steamcmd.tar.gz -C /mnt/server/steamcmd
+cd /mnt/server/steamcmd
 
-# --- SteamCMD ----------------------------------------------------------------
-export HOME="${INSTALL_DIR}/.steamhome"
-mkdir -p "${INSTALL_DIR}/.steamcmd" "${HOME}"
-curl -sSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar -xz -C "${INSTALL_DIR}/.steamcmd"
-STEAMCMD="${INSTALL_DIR}/.steamcmd/steamcmd.sh"
-chmod +x "${STEAMCMD}" 2>/dev/null || true
+# SteamCMD misbehaves unless /mnt is root-owned; Pterodactyl re-chowns afterward.
+chown -R root:root /mnt
+export HOME=/mnt/server
 
-# --- 1) Download the paid game (real creds, Windows platform, branch) --------
+# --- Download the Windows game (paid; shared content account) ----------------
 echo ">>> Downloading Schedule I (app ${STEAMAPPID}) ..."
-ARGS=(+@sSteamCmdForcePlatformType windows +force_install_dir "${INSTALL_DIR}"
-      +login "${STEAM_USER}" "${STEAM_PASS}" "${STEAM_GUARD:-}" +app_update "${STEAMAPPID}")
-[ -n "${BRANCH}" ] && ARGS+=(-beta "${BRANCH}")
-ARGS+=(validate +quit)
-"${STEAMCMD}" "${ARGS[@]}"
-[ -f "${INSTALL_DIR}/Schedule I.exe" ] || { echo "ERROR: game not installed (bad creds, Steam Guard, or branch)."; exit 1; }
+BETA=""; [ -n "${BRANCH}" ] && BETA="-beta ${BRANCH}"
+./steamcmd.sh +@sSteamCmdForcePlatformType windows +force_install_dir /mnt/server \
+    +login "${STEAM_USER}" "${STEAM_PASS}" "${STEAM_AUTH:-}" \
+    +app_update ${STEAMAPPID} ${BETA} validate +quit
+[ -f "/mnt/server/Schedule I.exe" ] || { echo "ERROR: game not installed (creds, Steam Guard, or branch)."; exit 1; }
 
-# --- 2) Steamworks redist (app 1007, anonymous) + native DLLs ----------------
+# --- Steamworks redist (app 1007, anonymous) + native DLLs -------------------
 echo ">>> Steamworks redist (app 1007) ..."
-mkdir -p "${INSTALL_DIR}/.redist"
-"${STEAMCMD}" +@sSteamCmdForcePlatformType windows +force_install_dir "${INSTALL_DIR}/.redist" \
+mkdir -p /mnt/server/.redist
+./steamcmd.sh +@sSteamCmdForcePlatformType windows +force_install_dir /mnt/server/.redist \
     +login anonymous +app_update 1007 validate +quit || true
-copy_dll() {
-    local n="$1" s=""
-    for c in "${INSTALL_DIR}/.redist/${n}" "${INSTALL_DIR}/.redist/redistributable_bin/${n}" \
-             "${INSTALL_DIR}/.redist/redistributable_bin/win64/${n}" "${INSTALL_DIR}/Schedule I_Data/Plugins/x86_64/${n}"; do
-        [ -f "$c" ] && { s="$c"; break; }
-    done
-    [ -z "$s" ] && s=$(find "${INSTALL_DIR}/.redist" "${INSTALL_DIR}" -type f -name "$n" 2>/dev/null | head -n1)
-    [ -n "$s" ] && { cp -f "$s" "${INSTALL_DIR}/${n}"; echo "  + ${n}"; } || echo "  ! missing ${n}"
-}
-for d in steamclient64.dll steam_api64.dll tier0_s64.dll vstdlib_s64.dll steamclient.dll tier0_s.dll vstdlib_s.dll; do copy_dll "$d"; done
+cd /mnt/server
+for n in steamclient64.dll steam_api64.dll tier0_s64.dll vstdlib_s64.dll steamclient.dll tier0_s.dll vstdlib_s.dll; do
+    src=$(find /mnt/server/.redist "/mnt/server/Schedule I_Data/Plugins" -type f -name "$n" 2>/dev/null | head -n1)
+    if [ -n "$src" ]; then cp -f "$src" "/mnt/server/$n"; echo "  + $n"; else echo "  ! $n"; fi
+done
 
-# --- 3) steam_appid.txt ------------------------------------------------------
-printf "%s\n" "${STEAMAPPID}" > "${INSTALL_DIR}/steam_appid.txt"
+echo "${STEAMAPPID}" > /mnt/server/steam_appid.txt
 
-# --- 4) MelonLoader (pinned version) -----------------------------------------
+# --- MelonLoader (pinned) ----------------------------------------------------
 echo ">>> MelonLoader ${MELONLOADER_VERSION} ..."
 curl -fsSL -o /tmp/ml.zip "https://github.com/LavaGang/MelonLoader/releases/download/${MELONLOADER_VERSION}/MelonLoader.x64.zip"
-unzip -oq /tmp/ml.zip -d "${INSTALL_DIR}"   # -> version.dll + MelonLoader/
-rm -f /tmp/ml.zip
-[ -f "${INSTALL_DIR}/version.dll" ] || { echo "ERROR: MelonLoader extraction failed."; exit 1; }
+unzip -oq /tmp/ml.zip -d /mnt/server
+[ -f /mnt/server/version.dll ] || { echo "ERROR: MelonLoader extraction failed."; exit 1; }
 
-# --- 5) Server mod DLL (pinned release, runtime-matched) ---------------------
+# --- Server mod DLL (pinned, runtime-matched) --------------------------------
 echo ">>> DedicatedServerMod ${MOD_VERSION} (${MOD_DLL}) ..."
-rm -rf /tmp/modzip && mkdir -p /tmp/modzip "${INSTALL_DIR}/Mods"
+rm -rf /tmp/modzip; mkdir -p /tmp/modzip /mnt/server/Mods
 curl -fsSL -o /tmp/mod.zip "https://github.com/ifBars/S1DedicatedServers/releases/download/${MOD_VERSION}/Docker.zip"
 unzip -oq /tmp/mod.zip -d /tmp/modzip
-rm -f "${INSTALL_DIR}/Mods/DedicatedServerMod_Mono_Server.dll" "${INSTALL_DIR}/Mods/DedicatedServerMod_Il2cpp_Server.dll"
+rm -f /mnt/server/Mods/DedicatedServerMod_Mono_Server.dll /mnt/server/Mods/DedicatedServerMod_Il2cpp_Server.dll
 MODSRC=$(find /tmp/modzip -type f -name "${MOD_DLL}" | head -n1)
 [ -n "${MODSRC}" ] || { echo "ERROR: ${MOD_DLL} not found in release ${MOD_VERSION}."; exit 1; }
-cp -f "${MODSRC}" "${INSTALL_DIR}/Mods/${MOD_DLL}"
-rm -rf /tmp/mod.zip /tmp/modzip
+cp -f "${MODSRC}" "/mnt/server/Mods/${MOD_DLL}"
 echo "  + Mods/${MOD_DLL}"
 
-# --- 6) Seed server_config.toml (only if absent) -----------------------------
-mkdir -p "${INSTALL_DIR}/UserData"
-CFG="${INSTALL_DIR}/UserData/server_config.toml"
+# --- Seed server_config.toml (only if absent) --------------------------------
+mkdir -p /mnt/server/UserData
+CFG=/mnt/server/UserData/server_config.toml
 if [ ! -f "${CFG}" ]; then
 echo ">>> Seeding server_config.toml ..."
 cat > "${CFG}" <<TOML
@@ -145,7 +137,7 @@ saveGamePath = ''
 TOML
 fi
 
-# --- Cleanup transient install artifacts -------------------------------------
-rm -rf "${INSTALL_DIR}/.steamcmd" "${INSTALL_DIR}/.redist" "${HOME}"
+# --- Cleanup -----------------------------------------------------------------
+rm -rf /mnt/server/steamcmd /mnt/server/.redist /tmp/steamcmd.tar.gz /tmp/ml.zip /tmp/mod.zip /tmp/modzip
 
 echo "=== Schedule I install complete (runtime=${RUNTIME}) ==="
