@@ -29,6 +29,13 @@ RUN if ! getent group 988  >/dev/null; then groupadd -g 988 container; fi \
 # cannot clobber it. Hand it to the container user so Wine runs at runtime.
 RUN chown -R 988:988 /home/steam/wineprefix
 
+# Pterodactyl runs BOTH the install and the runtime as the non-root `container`
+# user (uid 988). It must be able to traverse /home/steam to reach the Wine
+# prefix, and read the MelonLoader bootstrap + steamcmd during install. The
+# base image's /home/steam is mode 700, so open just enough for read/traverse.
+RUN chmod a+rx /home/steam \
+ && chmod -R a+rX /home/steam/bootstrap /home/steam/steamcmd
+
 # Runtime environment for the container user. The full WINEDLLOVERRIDES makes
 # Wine prefer the native Steam/version DLLs the dedicated server needs (this is
 # what upstream's run.sh sets at launch; we bake it so the startup line is clean).
