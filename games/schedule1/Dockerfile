@@ -43,8 +43,9 @@ ENV HOME=/home/container \
     WINEDLLOVERRIDES="version=n,b;steam_api64=n,b;steamclient64=n,b;tier0_s64=n,b;vstdlib_s64=n,b;steamclient=n,b;tier0_s=n,b;vstdlib_s=n,b"
 
 COPY entrypoint.sh /entrypoint.sh
+COPY install.sh /install.sh
 # Strip any CRLF (in case of a Windows checkout) and make executable.
-RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh /install.sh && chmod +x /entrypoint.sh /install.sh
 
 USER container
 WORKDIR /home/container
